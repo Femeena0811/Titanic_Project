@@ -53,14 +53,44 @@ st.markdown("""
 def load_data():
     """Load and preprocess the Titanic dataset"""
     try:
-        df = pd.read_csv('data/Titanic-Dataset.csv')
+        # Try different possible file paths
+        try:
+            df = pd.read_csv('data/Titanic-Dataset.csv')
+        except FileNotFoundError:
+            try:
+                df = pd.read_csv('Titanic-Dataset.csv')
+            except FileNotFoundError:
+                # Create sample data if file doesn't exist
+                st.warning("Dataset file not found. Using sample data for demonstration.")
+                return create_sample_data()
+        
         # Basic preprocessing for display
-        df['Age'].fillna(df['Age'].median(), inplace=True)
-        df['Embarked'].fillna('S', inplace=True)
+        if 'Age' in df.columns:
+            df['Age'].fillna(df['Age'].median(), inplace=True)
+        if 'Embarked' in df.columns:
+            df['Embarked'].fillna('S', inplace=True)
         return df
-    except FileNotFoundError:
-        st.error("Dataset file not found. Please ensure 'data/Titanic-Dataset.csv' exists.")
-        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error loading data: {str(e)}")
+        return create_sample_data()
+
+def create_sample_data():
+    """Create sample Titanic data for demonstration"""
+    data = {
+        'PassengerId': range(1, 892),
+        'Survived': np.random.choice([0, 1], 891, p=[0.62, 0.38]),
+        'Pclass': np.random.choice([1, 2, 3], 891, p=[0.24, 0.21, 0.55]),
+        'Name': [f'Passenger {i}' for i in range(1, 892)],
+        'Sex': np.random.choice(['male', 'female'], 891, p=[0.65, 0.35]),
+        'Age': np.random.normal(29, 14, 891).clip(0.4, 80),
+        'SibSp': np.random.poisson(0.5, 891),
+        'Parch': np.random.poisson(0.4, 891),
+        'Ticket': [f'Ticket_{i}' for i in range(1, 892)],
+        'Fare': np.random.gamma(2, 15, 891).clip(0, 300),
+        'Cabin': [f'Cabin_{i}' if np.random.random() > 0.7 else np.nan for i in range(1, 892)],
+        'Embarked': np.random.choice(['C', 'Q', 'S'], 891, p=[0.19, 0.09, 0.72])
+    }
+    return pd.DataFrame(data)
 
 @st.cache_resource
 def load_model():
@@ -131,7 +161,8 @@ if page == "🏠 Home":
     
     with col2:
         st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/f/fd/RMS_Titanic_3.jpg/800px-RMS_Titanic_3.jpg", 
-        caption="RMS Titanic", use_container_width=True)
+        caption="RMS Titanic", width='stretch')
+    
     # Key statistics
     st.markdown("---")
     st.subheader("📈 Dataset Overview")
@@ -146,19 +177,19 @@ if page == "🏠 Home":
         
         with col2:
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            survival_rate = df['Survived'].mean()
+            survival_rate = df['Survived'].mean() if 'Survived' in df.columns else 0
             st.metric("Overall Survival Rate", f"{survival_rate:.1%}")
             st.markdown('</div>', unsafe_allow_html=True)
         
         with col3:
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            avg_age = df['Age'].mean()
+            avg_age = df['Age'].mean() if 'Age' in df.columns else 0
             st.metric("Average Age", f"{avg_age:.1f} years")
             st.markdown('</div>', unsafe_allow_html=True)
         
         with col4:
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            avg_fare = df['Fare'].mean()
+            avg_fare = df['Fare'].mean() if 'Fare' in df.columns else 0
             st.metric("Average Fare", f"${avg_fare:.2f}")
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -175,7 +206,7 @@ elif page == "📊 Data Exploration":
     
     with col1:
         st.subheader("Dataset Preview")
-        st.dataframe(df.head(10), use_container_width=True)
+        st.dataframe(df.head(10), width='stretch')
     
     with col2:
         st.subheader("Dataset Info")
@@ -197,7 +228,7 @@ elif page == "📊 Data Exploration":
             'Missing Values': missing_data.values,
             'Percentage': (missing_data.values / len(df)) * 100
         })
-        st.dataframe(missing_df[missing_df['Missing Values'] > 0], use_container_width=True)
+        st.dataframe(missing_df[missing_df['Missing Values'] > 0], width='stretch')
         
         if missing_df[missing_df['Missing Values'] > 0].empty:
             st.success("No missing values found!")
@@ -206,7 +237,7 @@ elif page == "📊 Data Exploration":
         st.subheader("Data Types")
         dtype_df = pd.DataFrame(df.dtypes.value_counts()).reset_index()
         dtype_df.columns = ['Data Type', 'Count']
-        st.dataframe(dtype_df, use_container_width=True)
+        st.dataframe(dtype_df, width='stretch')
     
     st.markdown("---")
     
@@ -216,33 +247,49 @@ elif page == "📊 Data Exploration":
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        pclass_filter = st.multiselect("Passenger Class", [1, 2, 3], [1, 2, 3], key="pclass_filter")
-        sex_filter = st.multiselect("Gender", ['male', 'female'], ['male', 'female'], key="sex_filter")
+        pclass_options = [1, 2, 3] if 'Pclass' in df.columns else []
+        pclass_filter = st.multiselect("Passenger Class", pclass_options, pclass_options, key="pclass_filter")
+        
+        sex_options = ['male', 'female'] if 'Sex' in df.columns else []
+        sex_filter = st.multiselect("Gender", sex_options, sex_options, key="sex_filter")
     
     with col2:
-        age_range = st.slider("Age Range", 0, 100, (0, 80), key="age_range")
-        embarked_filter = st.multiselect("Embarkation Port", ['C', 'Q', 'S'], ['C', 'Q', 'S'], key="embarked_filter")
+        age_min = int(df['Age'].min()) if 'Age' in df.columns else 0
+        age_max = int(df['Age'].max()) if 'Age' in df.columns else 100
+        age_range = st.slider("Age Range", age_min, age_max, (age_min, age_max), key="age_range")
+        
+        embarked_options = ['C', 'Q', 'S'] if 'Embarked' in df.columns else []
+        embarked_filter = st.multiselect("Embarkation Port", embarked_options, embarked_options, key="embarked_filter")
     
     with col3:
-        survived_filter = st.multiselect("Survival Status", [0, 1], [0, 1], 
+        survived_options = [0, 1] if 'Survived' in df.columns else []
+        survived_filter = st.multiselect("Survival Status", survived_options, survived_options, 
                                        format_func=lambda x: "Survived" if x == 1 else "Died", 
                                        key="survived_filter")
-        fare_range = st.slider("Fare Range ($)", 0, 600, (0, 300), key="fare_range")
+        
+        fare_min = int(df['Fare'].min()) if 'Fare' in df.columns else 0
+        fare_max = int(df['Fare'].max()) if 'Fare' in df.columns else 600
+        fare_range = st.slider("Fare Range ($)", fare_min, fare_max, (fare_min, fare_max), key="fare_range")
     
     # Apply filters
-    filtered_df = df[
-        (df['Pclass'].isin(pclass_filter)) &
-        (df['Sex'].isin(sex_filter)) &
-        (df['Age'].between(age_range[0], age_range[1])) &
-        (df['Embarked'].isin(embarked_filter)) &
-        (df['Survived'].isin(survived_filter)) &
-        (df['Fare'].between(fare_range[0], fare_range[1]))
-    ]
+    filtered_df = df.copy()
+    if 'Pclass' in df.columns:
+        filtered_df = filtered_df[filtered_df['Pclass'].isin(pclass_filter)]
+    if 'Sex' in df.columns:
+        filtered_df = filtered_df[filtered_df['Sex'].isin(sex_filter)]
+    if 'Age' in df.columns:
+        filtered_df = filtered_df[filtered_df['Age'].between(age_range[0], age_range[1])]
+    if 'Embarked' in df.columns:
+        filtered_df = filtered_df[filtered_df['Embarked'].isin(embarked_filter)]
+    if 'Survived' in df.columns:
+        filtered_df = filtered_df[filtered_df['Survived'].isin(survived_filter)]
+    if 'Fare' in df.columns:
+        filtered_df = filtered_df[filtered_df['Fare'].between(fare_range[0], fare_range[1])]
     
     st.write(f"**Filtered results:** {len(filtered_df)} passengers found")
     
     if len(filtered_df) > 0:
-        st.dataframe(filtered_df, use_container_width=True)
+        st.dataframe(filtered_df, width='stretch')
         
         # Summary statistics for filtered data
         st.subheader("📋 Filtered Data Summary")
@@ -251,13 +298,13 @@ elif page == "📊 Data Exploration":
         with col1:
             st.metric("Filtered Count", len(filtered_df))
         with col2:
-            filtered_survival = filtered_df['Survived'].mean()
+            filtered_survival = filtered_df['Survived'].mean() if 'Survived' in filtered_df.columns else 0
             st.metric("Survival Rate", f"{filtered_survival:.1%}")
         with col3:
-            avg_age = filtered_df['Age'].mean()
+            avg_age = filtered_df['Age'].mean() if 'Age' in filtered_df.columns else 0
             st.metric("Average Age", f"{avg_age:.1f}")
         with col4:
-            avg_fare = filtered_df['Fare'].mean()
+            avg_fare = filtered_df['Fare'].mean() if 'Fare' in filtered_df.columns else 0
             st.metric("Average Fare", f"${avg_fare:.2f}")
 
 # Visualization Page
@@ -284,7 +331,7 @@ elif page == "📈 Visualization":
     # Create visualizations
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    if viz_type == "Survival by Passenger Class":
+    if viz_type == "Survival by Passenger Class" and 'Pclass' in df.columns and 'Survived' in df.columns:
         survival_by_class = df.groupby('Pclass')['Survived'].mean().reset_index()
         ax.bar(survival_by_class['Pclass'].astype(str), survival_by_class['Survived'] * 100)
         ax.set_xlabel('Passenger Class')
@@ -293,7 +340,7 @@ elif page == "📈 Visualization":
         for i, v in enumerate(survival_by_class['Survived']):
             ax.text(i, v * 100 + 1, f'{v:.1%}', ha='center')
         
-    elif viz_type == "Survival by Gender":
+    elif viz_type == "Survival by Gender" and 'Sex' in df.columns and 'Survived' in df.columns:
         survival_by_gender = df.groupby('Sex')['Survived'].mean().reset_index()
         ax.bar(survival_by_gender['Sex'], survival_by_gender['Survived'] * 100)
         ax.set_xlabel('Gender')
@@ -302,7 +349,7 @@ elif page == "📈 Visualization":
         for i, v in enumerate(survival_by_gender['Survived']):
             ax.text(i, v * 100 + 1, f'{v:.1%}', ha='center')
         
-    elif viz_type == "Age Distribution by Survival":
+    elif viz_type == "Age Distribution by Survival" and 'Age' in df.columns and 'Survived' in df.columns:
         survived_ages = df[df['Survived'] == 1]['Age']
         died_ages = df[df['Survived'] == 0]['Age']
         
@@ -312,13 +359,13 @@ elif page == "📈 Visualization":
         ax.set_title('Age Distribution by Survival Status')
         ax.legend()
         
-    elif viz_type == "Fare Distribution by Survival":
+    elif viz_type == "Fare Distribution by Survival" and 'Fare' in df.columns and 'Survived' in df.columns:
         sns.boxplot(x='Survived', y='Fare', data=df, ax=ax)
         ax.set_xlabel('Survival Status (0 = Died, 1 = Survived)')
         ax.set_ylabel('Fare ($)')
         ax.set_title('Fare Distribution by Survival Status')
         
-    elif viz_type == "Survival by Embarkation Port":
+    elif viz_type == "Survival by Embarkation Port" and 'Embarked' in df.columns and 'Survived' in df.columns:
         survival_by_port = df.groupby('Embarked')['Survived'].mean().reset_index()
         ax.bar(survival_by_port['Embarked'], survival_by_port['Survived'] * 100)
         ax.set_xlabel('Embarkation Port')
@@ -327,7 +374,7 @@ elif page == "📈 Visualization":
         for i, v in enumerate(survival_by_port['Survived']):
             ax.text(i, v * 100 + 1, f'{v:.1%}', ha='center')
         
-    elif viz_type == "Family Size vs Survival":
+    elif viz_type == "Family Size vs Survival" and 'SibSp' in df.columns and 'Parch' in df.columns and 'Survived' in df.columns:
         df['FamilySize'] = df['SibSp'] + df['Parch'] + 1
         survival_by_family = df.groupby('FamilySize')['Survived'].mean().reset_index()
         ax.plot(survival_by_family['FamilySize'], survival_by_family['Survived'] * 100, marker='o')
@@ -335,6 +382,9 @@ elif page == "📈 Visualization":
         ax.set_ylabel('Survival Rate (%)')
         ax.set_title('Survival Rate by Family Size')
         ax.grid(True, alpha=0.3)
+    else:
+        ax.text(0.5, 0.5, 'Required data not available', ha='center', va='center', transform=ax.transAxes)
+        ax.set_title('Visualization Not Available')
     
     plt.tight_layout()
     st.pyplot(fig)
@@ -346,22 +396,26 @@ elif page == "📈 Visualization":
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.write("**Survival by Class:**")
-        class_survival = df.groupby('Pclass')['Survived'].mean()
-        for pclass, rate in class_survival.items():
-            st.write(f"Class {pclass}: {rate:.1%}")
+        if 'Pclass' in df.columns and 'Survived' in df.columns:
+            st.write("**Survival by Class:**")
+            class_survival = df.groupby('Pclass')['Survived'].mean()
+            for pclass, rate in class_survival.items():
+                st.write(f"Class {pclass}: {rate:.1%}")
     
     with col2:
-        st.write("**Survival by Gender:**")
-        gender_survival = df.groupby('Sex')['Survived'].mean()
-        for gender, rate in gender_survival.items():
-            st.write(f"{gender}: {rate:.1%}")
+        if 'Sex' in df.columns and 'Survived' in df.columns:
+            st.write("**Survival by Gender:**")
+            gender_survival = df.groupby('Sex')['Survived'].mean()
+            for gender, rate in gender_survival.items():
+                st.write(f"{gender}: {rate:.1%}")
     
     with col3:
         st.write("**Overall Statistics:**")
         st.write(f"Total passengers: {len(df)}")
-        st.write(f"Overall survival: {df['Survived'].mean():.1%}")
-        st.write(f"Average age: {df['Age'].mean():.1f}")
+        survival_rate = df['Survived'].mean() if 'Survived' in df.columns else 0
+        st.write(f"Overall survival: {survival_rate:.1%}")
+        avg_age = df['Age'].mean() if 'Age' in df.columns else 0
+        st.write(f"Average age: {avg_age:.1f}")
 
 # Survival Prediction Page
 elif page == "🔮 Survival Prediction":
@@ -410,7 +464,8 @@ elif page == "🔮 Survival Prediction":
         # Encode categorical variables
         try:
             for column in ['Sex', 'Embarked', 'Title']:
-                input_df[column] = label_encoders[column].transform(input_df[column])
+                if column in input_df.columns and column in label_encoders:
+                    input_df[column] = label_encoders[column].transform(input_df[column])
             
             # Make prediction
             prediction = model.predict(input_df)[0]
